@@ -1,0 +1,239 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. إدارة الشركات والاشتراكات
+// ==========================================
+
+model Tenant {
+  id                      String             @id @default(uuid())
+  name                    String
+  email                   String             @unique
+  plan                    PlanType           @default(STARTER)
+  subscriptionStatus      SubscriptionStatus @default(ACTIVE)
+  subscriptionEndsAt      DateTime?
+  maxAgents               Int                @default(2)
+  baseStorageLimitMB      Int                @default(1000)
+  extraStoragePurchasedMB Int                @default(0)
+  mediaRetentionDays      Int                @default(60)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  users         User[]
+  contacts      Contact[]
+  flows         Flow[]
+  conversations Conversation[]
+  addons        SubscriptionAddon[]
+}
+
+model SubscriptionAddon {
+  id       String    @id @default(uuid())
+  type     AddonType
+  quantity Int
+  cost     Float
+  active   Boolean   @default(true)
+  tenantId String
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+}
+
+// ==========================================
+// 2. الموظفين والصلاحيات
+// ==========================================
+
+model User {
+  id                    String         @id @default(uuid())
+  email                 String         @unique
+  password              String
+  name                  String
+  role                  Role           @default(AGENT)
+  isActive              Boolean        @default(true)
+  tenantId              String
+  tenant                Tenant         @relation(fields: [tenantId], references: [id])
+  assignedConversations Conversation[]
+}
+
+// ==========================================
+// 3. العملاء والقنوات (Omnichannel)
+// ==========================================
+
+model Contact {
+  id       String    @id @default(uuid())
+  name     String?
+  email    String?
+  tags     String[]
+  notes    String?
+  tenantId String
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+
+  channels      ContactChannel[]
+  conversations Conversation[]
+}
+
+model ContactChannel {
+  id         String   @id @default(uuid())
+  platform   Platform
+  identifier String
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id])
+
+  @@unique([platform, identifier, contactId])
+}
+
+// ==========================================
+// 4. المحادثات والرسائل
+// ==========================================
+
+model Conversation {
+  id            String             @id @default(uuid())
+  status        ConversationStatus @default(OPEN)
+  channel       Platform
+  unreadCount   Int                @default(0)
+  lastMessageAt DateTime           @default(now())
+
+  contactId  String
+  contact    Contact @relation(fields: [contactId], references: [id])
+  assigneeId String?
+  assignee   User?   @relation(fields: [assigneeId], references: [id])
+  tenantId   String
+  tenant     Tenant  @relation(fields: [tenantId], references: [id])
+
+  messages Message[]
+}
+
+model Message {
+  id             String    @id @default(uuid())
+  content        String?
+  mediaUrl       String?
+  mediaType      String?
+  type           MsgType   @default(TEXT)
+  direction      MsgDir
+  status         MsgStatus @default(SENT)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  createdAt      DateTime  @default(now())
+}
+
+// ==========================================
+// 5. منشئ البوت (Flow Builder)
+// ==========================================
+
+model Flow {
+  id             String     @id @default(uuid())
+  name           String
+  isActive       Boolean    @default(true)
+  triggerKeyword String?
+  tenantId       String
+  tenant         Tenant     @relation(fields: [tenantId], references: [id])
+  steps          FlowStep[]
+}
+
+model FlowStep {
+  id       String   @id @default(uuid())
+  flowId   String
+  flow     Flow     @relation(fields: [flowId], references: [id])
+  type     StepType
+  content  Json
+  position Json?
+  
+  // --- التعديل هنا ---
+  parentId String?
+  parentStep FlowStep? @relation("NextStep", fields: [parentId], references: [id])
+  
+  // هذا هو السطر الذي كان ناقصاً (العلاقة العكسية)
+  children   FlowStep[] @relation("NextStep")
+  // -------------------
+
+  nextSteps           FlowConnection[] @relation("SourceStep")
+  incomingConnections FlowConnection[] @relation("TargetStep")
+}
+
+model FlowConnection {
+  id           String  @id @default(uuid())
+  sourceStepId String
+  sourceStep   FlowStep @relation("SourceStep", fields: [sourceStepId], references: [id])
+  targetStepId String
+  targetStep   FlowStep @relation("TargetStep", fields: [targetStepId], references: [id])
+  triggerValue String?
+}
+
+// ==========================================
+// Enums (الثوابت - مصححة التنسيق)
+// ==========================================
+
+enum Role {
+  ADMIN
+  AGENT
+  SUPER_ADMIN
+}
+
+enum PlanType {
+  STARTER
+  GROWTH
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIAL
+}
+
+enum AddonType {
+  STORAGE_GB
+  EXTRA_USER
+  EXTRA_CHANNEL
+}
+
+enum Platform {
+  WHATSAPP
+  TELEGRAM
+  INSTAGRAM
+  TWITTER
+  WEB
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum MsgType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  INTERACTIVE
+}
+
+enum MsgDir {
+  INCOMING
+  OUTGOING
+}
+
+enum MsgStatus {
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum StepType {
+  MESSAGE
+  MENU
+  INPUT
+  ACTION_ASSIGN
+  ACTION_TAG
+}
