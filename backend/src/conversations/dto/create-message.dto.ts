@@ -1,6 +1,6 @@
 // src/conversations/dto/create-message.dto.ts
 
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator'; // تم حذف IsNotEmpty
 import { MsgType } from '@prisma/client';
 
 export class CreateMessageDto {
