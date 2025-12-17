@@ -65,16 +65,31 @@ model User {
 // ==========================================
 
 model Contact {
-  id       String    @id @default(uuid())
-  name     String?
-  email    String?
-  tags     String[]
-  notes    String?
-  tenantId String
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  id        String   @id @default(uuid())
+  
+  name      String?
+  phone     String?
+  email     String?
+  avatarUrl String?
+  tags      String[]
+  metadata  Json?
 
-  channels      ContactChannel[]
-  conversations Conversation[]
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  // 👇👇👇 هذه هي الأسطر التي كانت ناقصة وسببت الخطأ
+  channels      ContactChannel[] // لربط قنوات الاتصال بالعميل
+  conversations Conversation[]   // لربط المحادثات بالعميل
+  // 👆👆👆
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([phone])
+  @@index([email])
+  @@unique([tenantId, phone])
+  @@unique([tenantId, email])
 }
 
 model ContactChannel {
