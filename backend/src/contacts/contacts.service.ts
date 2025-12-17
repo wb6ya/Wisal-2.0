@@ -1,4 +1,8 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { PrismaService } from '../prisma.service';
@@ -58,22 +62,32 @@ export class ContactsService {
     updateContactDto: UpdateContactDto,
     tenantId: string,
   ) {
-    // نستخدم updateMany كحيلة أمنية:
-    // لأن update العادية تتطلب ID فقط، لكن updateMany تسمح بفلترة tenantId
-    // فنضمن أن لا أحد يعدل عميل شركة أخرى
     const result = await this.prisma.contact.updateMany({
       where: { id, tenantId },
       data: updateContactDto,
     });
-    // updateMany ترجع عدد الصفوف المعدلة ولا ترجع البيانات
-    // لذلك نعيد إرجاع رسالة نجاح أو البيانات الجديدة بجلبها مرة أخرى
-    return { count: result.count, message: 'تم التحديث بنجاح' };
+
+    // 👇 التحسين: إذا لم يتم تحديث أي صف، يعني العنصر غير موجود أو لا يملكه
+    if (result.count === 0) {
+      throw new NotFoundException(
+        'جهة الاتصال غير موجودة أو لا تملك صلاحية تعديلها',
+      );
+    }
+
+    return { success: true, message: 'تم التحديث بنجاح' };
   }
 
-  // 5. الحذف
+  // 5. الحذف (معدلة)
   async remove(id: string, tenantId: string) {
-    return await this.prisma.contact.deleteMany({
+    const result = await this.prisma.contact.deleteMany({
       where: { id, tenantId },
     });
+
+    // 👇 التحسين: نفس الشيء للحذف
+    if (result.count === 0) {
+      throw new NotFoundException('جهة الاتصال غير موجودة');
+    }
+
+    return { success: true, message: 'تم الحذف بنجاح' };
   }
 }

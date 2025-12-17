@@ -5,11 +5,11 @@ import { AppService } from './app.service';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { PrismaService } from './prisma.service'; // <--- 1. استيراد
 import { ContactsModule } from './contacts/contacts.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { EventsGateway } from './events/events.gateway';
+import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
