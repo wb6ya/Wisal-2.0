@@ -1,40 +1,35 @@
-// src/auth/jwt.strategy.ts
-
-import { Injectable } from '@nestjs/common';
-import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { PassportStrategy } from '@nestjs/passport';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PrismaService } from '../prisma.service';
 
-// تعريف شكل البيانات الموجودة داخل التوكن (للترتيب فقط)
+// 👇 1. تعريف شكل البيانات القادمة في التوكن
 interface JwtPayload {
   sub: string;
   email: string;
-  role: string;
-  tenantId: string;
 }
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(private prisma: PrismaService) {
     super({
-      // 1. من أين نأخذ التوكن؟ من الـ Header (Authorization: Bearer ...)
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-      // 2. هل نرفض التوكن المنتهي الصلاحية؟ نعم طبعاً
       ignoreExpiration: false,
-      // 3. نفس مفتاح التشفير السري الذي استخدمناه في Module
-      // ⚠️ تذكير: يجب نقله لاحقاً لملف .env
-      secretOrKey: process.env.JWT_SECRET!,
+      secretOrKey: process.env.JWT_SECRET || 'secretKey',
     });
   }
 
-  // هذه الدالة تعمل تلقائياً إذا كان التوكن صحيحاً
-  validate(payload: JwtPayload) {
-    // البيانات التي نرجعها هنا سيتم تخزينها في (request.user)
-    // لتتمكن من استخدامها لاحقاً في الـ Controllers
-    return {
-      userId: payload.sub,
-      email: payload.email,
-      role: payload.role,
-      tenantId: payload.tenantId,
-    };
+  // 👇 2. استخدام النوع بدلاً من any
+  async validate(payload: JwtPayload) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub }, // ✅ الآن sub معروفة وليست unsafe
+      include: { tenant: true },
+    });
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException();
+    }
+
+    return user;
   }
 }

@@ -10,7 +10,7 @@ datasource db {
 }
 
 // ==========================================
-// 1. إدارة الشركات والاشتراكات
+// 1. إدارة الشركات والاشتراكات (Tenants)
 // ==========================================
 
 model Tenant {
@@ -27,6 +27,8 @@ model Tenant {
   createdAt               DateTime           @default(now())
   updatedAt               DateTime           @updatedAt
   whatsappPhoneNumberId   String?            @unique
+
+  // العلاقات العكسية
   users         User[]
   contacts      Contact[]
   flows         Flow[]
@@ -41,11 +43,13 @@ model SubscriptionAddon {
   cost     Float
   active   Boolean   @default(true)
   tenantId String
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  
+  // ✅ Cascade: إذا حذفت الشركة، احذف إضافاتها
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 // ==========================================
-// 2. الموظفين والصلاحيات
+// 2. الموظفين والصلاحيات (Users)
 // ==========================================
 
 model User {
@@ -56,17 +60,19 @@ model User {
   role                  Role           @default(AGENT)
   isActive              Boolean        @default(true)
   tenantId              String
-  tenant                Tenant         @relation(fields: [tenantId], references: [id])
+  
+  // ✅ Cascade: إذا حذفت الشركة، احذف موظفيها
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
   assignedConversations Conversation[]
 }
 
 // ==========================================
-// 3. العملاء والقنوات (Omnichannel)
+// 3. العملاء والقنوات (Contacts)
 // ==========================================
 
 model Contact {
   id        String   @id @default(uuid())
-  
   name      String?
   phone     String?
   email     String?
@@ -75,35 +81,35 @@ model Contact {
   metadata  Json?
 
   tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  // ✅ Cascade: إذا حذفت الشركة، احذف عملائها
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  // 👇👇👇 هذه هي الأسطر التي كانت ناقصة وسببت الخطأ
-  channels      ContactChannel[] // لربط قنوات الاتصال بالعميل
-  conversations Conversation[]   // لربط المحادثات بالعميل
-  // 👆👆👆
+  channels      ContactChannel[]
+  conversations Conversation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([tenantId, phone]) // لا يجوز تكرار الرقم لنفس الشركة
+  @@unique([tenantId, email])
   @@index([tenantId])
   @@index([phone])
-  @@index([email])
-  @@unique([tenantId, phone])
-  @@unique([tenantId, email])
 }
 
 model ContactChannel {
   id         String   @id @default(uuid())
   platform   Platform
-  identifier String
+  identifier String   // مثل chat_id في تيليقرام أو user_id في انستقرام
   contactId  String
-  contact    Contact  @relation(fields: [contactId], references: [id])
+  
+  // ✅ Cascade: إذا حذفنا العميل، نحذف قنوات اتصاله
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@unique([platform, identifier, contactId])
 }
 
 // ==========================================
-// 4. المحادثات والرسائل
+// 4. المحادثات والرسائل (Conversations)
 // ==========================================
 
 model Conversation {
@@ -112,27 +118,36 @@ model Conversation {
   channel       Platform
   unreadCount   Int                @default(0)
   lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
   contactId  String
-  contact    Contact @relation(fields: [contactId], references: [id])
+  // ✅ Cascade: إذا حذفنا العميل، نحذف محادثاته
+  contact    Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  
   assigneeId String?
-  assignee   User?   @relation(fields: [assigneeId], references: [id])
+  assignee   User?   @relation(fields: [assigneeId], references: [id]) // لا نحذف المحادثة إذا حذف الموظف (فقط تصبح بدون موظف)
+  
   tenantId   String
-  tenant     Tenant  @relation(fields: [tenantId], references: [id])
+  // ✅ Cascade: تنظيف شامل عند حذف الشركة
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  messages Message[]
+  messages   Message[]
 }
 
 model Message {
   id             String    @id @default(uuid())
-  content        String?
+  content        String?   // يمكن أن تكون فارغة إذا كانت صورة فقط
   mediaUrl       String?
   mediaType      String?
   type           MsgType   @default(TEXT)
   direction      MsgDir
   status         MsgStatus @default(SENT)
+  
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  // ✅ Cascade: إذا حذفت المحادثة، احذف رسائلها
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
   createdAt      DateTime  @default(now())
 }
 
@@ -146,41 +161,48 @@ model Flow {
   isActive       Boolean    @default(true)
   triggerKeyword String?
   tenantId       String
-  tenant         Tenant     @relation(fields: [tenantId], references: [id])
+  // ✅ Cascade: إذا حذفت الشركة، احذف بوتاتها
+  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
   steps          FlowStep[]
 }
 
 model FlowStep {
   id       String   @id @default(uuid())
   flowId   String
-  flow     Flow     @relation(fields: [flowId], references: [id])
+  // ✅ Cascade: إذا حذفت البوت، احذف خطواته
+  flow     Flow     @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  
   type     StepType
-  content  Json
-  position Json?
-  
-  // --- التعديل هنا ---
-  parentId String?
-  parentStep FlowStep? @relation("NextStep", fields: [parentId], references: [id])
-  
-  // هذا هو السطر الذي كان ناقصاً (العلاقة العكسية)
-  children   FlowStep[] @relation("NextStep")
-  // -------------------
+  content  Json     // محتوى الرسالة أو السؤال
+  position Json?    // إحداثيات X,Y للرسم في الواجهة
 
+  // العلاقة الذاتية (للهيكلة الشجرية البسيطة)
+  parentId String?
+  parentStep FlowStep? @relation("NextStep", fields: [parentId], references: [id], onDelete: SetNull)
+  children   FlowStep[] @relation("NextStep")
+
+  // العلاقات المعقدة (للهيكلة الشبكية Graph)
   nextSteps           FlowConnection[] @relation("SourceStep")
   incomingConnections FlowConnection[] @relation("TargetStep")
 }
 
 model FlowConnection {
-  id           String  @id @default(uuid())
+  id           String   @id @default(uuid())
+  
   sourceStepId String
-  sourceStep   FlowStep @relation("SourceStep", fields: [sourceStepId], references: [id])
+  // ✅ Cascade: إذا حذفت الخطوة، احذف الوصلة الخارجة منها
+  sourceStep   FlowStep @relation("SourceStep", fields: [sourceStepId], references: [id], onDelete: Cascade)
+  
   targetStepId String
-  targetStep   FlowStep @relation("TargetStep", fields: [targetStepId], references: [id])
-  triggerValue String?
+  // ✅ Cascade: إذا حذفت الخطوة، احذف الوصلة الداخلة إليها
+  targetStep   FlowStep @relation("TargetStep", fields: [targetStepId], references: [id], onDelete: Cascade)
+  
+  triggerValue String? // الكلمة أو الزر الذي ينقلنا لهذه الخطوة
 }
 
 // ==========================================
-// Enums (الثوابت - مصححة التنسيق)
+// Enums
 // ==========================================
 
 enum Role {

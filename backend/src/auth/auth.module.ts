@@ -1,23 +1,21 @@
-// src/auth/auth.module.ts
-
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+import { JwtStrategy } from './jwt.strategy'; // 👈 استدعاء
 import { PrismaService } from '../prisma.service';
-import { JwtStrategy } from './jwt.strategy';
 
 @Module({
   imports: [
     PassportModule,
-    // إعدادات التوكن
     JwtModule.register({
-      secret: process.env.JWT_SECRET!, // ⚠️ لاحقاً سننقله لملف .env
-      signOptions: { expiresIn: '1d' }, // مدة صلاحية التوكن: يوم واحد
+      secret: process.env.JWT_SECRET!,
+      signOptions: { expiresIn: '30d' }, // مدة صلاحية التوكن
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PrismaService, JwtStrategy],
+  providers: [AuthService, PrismaService, JwtStrategy], // 👈 إضافة هنا
+  exports: [AuthService],
 })
 export class AuthModule {}
